@@ -851,13 +851,19 @@ else:
         </div>
         """, unsafe_allow_html=True)
 
-        # Vehicle crop
+        # Vehicle crop — capped so it never overflows the screen
         st.markdown('<div class="slabel" style="margin-top:0.6rem">🚗 Vehicle Crop</div>',
                     unsafe_allow_html=True)
         crop_vis = v["crop_bgr"].copy()
         ch, cw   = crop_vis.shape[:2]
         cv2.rectangle(crop_vis, (2, 2), (cw-2, ch-2), (0, 200, 255), 2)
-        st.image(np_to_pil(crop_vis), use_container_width=True)
+        MAX_H, MAX_W = 320, 560
+        scale = min(MAX_H / max(ch, 1), MAX_W / max(cw, 1), 1.0)
+        if scale < 1.0:
+            crop_vis = cv2.resize(crop_vis,
+                                  (int(cw * scale), int(ch * scale)),
+                                  interpolation=cv2.INTER_AREA)
+        st.image(np_to_pil(crop_vis))
 
         # ── License Plate section (always shown) ─────────────────────────────
         st.markdown(
