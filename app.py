@@ -865,108 +865,121 @@ else:
             '🔍 License Plate &amp; OCR</div>',
             unsafe_allow_html=True)
 
-        col_img, col_ocr = st.columns([1, 1], gap="large")
+        # Build base64 plate image for embedding in HTML card
+        def plate_to_b64(crop_bgr):
+            import base64, io
+            disp = upscale_plate_for_display(crop_bgr.copy(), target_h=80)
+            pb_h, pb_w = disp.shape[:2]
+            cv2.rectangle(disp, (0, 0), (pb_w-1, pb_h-1), (0, 200, 255), 3)
+            pil_img = np_to_pil(disp)
+            buf = io.BytesIO()
+            pil_img.save(buf, format="PNG")
+            return base64.b64encode(buf.getvalue()).decode()
 
-        with col_img:
-            if has_plate:
-                quality = "readable ✅" if plate_readable else "low quality ⚠️"
-                st.caption(f"Plate crop  ·  model conf: {pc:.3f}  ·  {quality}")
+        if has_plate:
+            quality_label = "READABLE ✅" if plate_readable else "LOW QUALITY ⚠"
+            quality_color = "#00cc66" if plate_readable else "#f0a500"
+            b64_img = plate_to_b64(v["plate_crop_bgr"])
+            plate_img_html = f'<img src="data:image/png;base64,{b64_img}" style="max-height:80px;max-width:100%;border-radius:4px;border:2px solid #00c8ff44;display:block;margin:0 auto;">'
+        else:
+            quality_label = "NOT DETECTED"
+            quality_color = "#7d8590"
+            plate_img_html = '<div style="font-family:\'Share Tech Mono\',monospace;font-size:0.65rem;color:#7d8590;text-align:center;padding:1rem 0">NO CROP AVAILABLE</div>'
 
-                # ── Raw colour crop (upscaled) ──────────────────────────────
-                plate_disp = upscale_plate_for_display(v["plate_crop_bgr"].copy())
-                pb_h, pb_w = plate_disp.shape[:2]
-                cv2.rectangle(plate_disp, (0, 0), (pb_w-1, pb_h-1), (0, 200, 255), 3)
-                st.image(np_to_pil(plate_disp), caption="Raw crop (colour)", use_container_width=True)
-
-                # ── Preprocessed variants preview ───────────────────────────
-                with st.expander("🔬 Preprocessed variants sent to OCR", expanded=False):
-                    variant_labels = [
-                        "CLAHE + Otsu", "Inverted Otsu", "Adaptive Thresh",
-                        "Sharpen + Otsu", "Dilated", "Bilateral + Otsu",
-                        "Gamma bright", "Gamma dark", "Deskewed",
-                    ]
-                    pp_variants = preprocess_plate(v["plate_crop_bgr"])
-                    cols_pp = st.columns(min(3, len(pp_variants)))
-                    for vi, vv in enumerate(pp_variants):
-                        lbl = variant_labels[vi] if vi < len(variant_labels) else f"Variant {vi+1}"
-                        vv_disp = upscale_plate_for_display(vv, target_h=80)
-                        with cols_pp[vi % 3]:
-                            st.image(vv_disp, caption=lbl, use_container_width=True)
-            else:
-                st.caption("Plate crop — not detected")
-                st.markdown("""
-                <div style="background:#161b22;border:1px dashed #21262d;
-                border-radius:6px;padding:2rem;text-align:center;
-                font-family:'Share Tech Mono',monospace;
-                font-size:0.65rem;color:#7d8590;letter-spacing:1px">
-                PLATE NOT DETECTED<br>
-                <span style="font-size:0.55rem">
-                  Lower plate confidence threshold in sidebar
-                </span>
-                </div>""", unsafe_allow_html=True)
-
-        with col_ocr:
-            st.caption("OCR Extracted Text")
-            if has_plate and plate_readable:
-                st.markdown(f"""
-                <div style="background:#0d1117;border:2px solid #f0a500;
-                border-radius:10px;padding:1.4rem 1.6rem;margin-top:0.2rem">
-                  <div style="font-family:'Share Tech Mono',monospace;font-size:0.6rem;
-                  color:#7d8590;letter-spacing:2px;margin-bottom:0.5rem">
-                    EXTRACTED PLATE NUMBER
-                  </div>
-                  <div style="font-family:'Share Tech Mono',monospace;font-size:2rem;
-                  font-weight:700;color:#f0a500;letter-spacing:6px;word-break:break-all">
-                    {v['plate_text']}
-                  </div>
-                  <div style="margin-top:0.8rem;display:flex;gap:8px;flex-wrap:wrap">
-                    <span class="conf-badge {conf_badge_class(pc)}">
-                      PLATE MODEL {pc:.3f}
-                    </span>
-                    <span class="conf-badge {conf_badge_class(oc)}">
-                      OCR CONF {oc:.3f}
-                    </span>
-                  </div>
+        if has_plate and plate_readable:
+            st.markdown(f"""
+            <div style="background:#0d1117;border:2px solid #f0a500;border-radius:12px;
+            padding:1.4rem 1.6rem;margin-top:0.4rem;display:flex;gap:1.4rem;align-items:center;flex-wrap:wrap">
+              <div style="flex:0 0 auto;min-width:120px;text-align:center">
+                <div style="font-family:'Share Tech Mono',monospace;font-size:0.55rem;
+                color:#7d8590;letter-spacing:2px;margin-bottom:6px">PLATE CROP</div>
+                {plate_img_html}
+                <div style="margin-top:6px">
+                  <span class="conf-badge {conf_badge_class(pc)}">MODEL {pc:.3f}</span>
                 </div>
-                """, unsafe_allow_html=True)
-            elif has_plate and not plate_readable:
-                st.markdown(f"""
-                <div style="background:#0d1117;border:2px solid #ff4444;
-                border-radius:10px;padding:1.4rem 1.6rem;margin-top:0.2rem">
-                  <div style="font-family:'Share Tech Mono',monospace;font-size:0.6rem;
-                  color:#7d8590;letter-spacing:2px;margin-bottom:0.5rem">
-                    PLATE DETECTED — OCR FAILED
-                  </div>
-                  <div style="font-family:'Share Tech Mono',monospace;font-size:1.4rem;
-                  color:#ff4444;letter-spacing:3px">UNREADABLE</div>
-                  <div style="margin-top:0.8rem">
-                    <span class="conf-badge {conf_badge_class(pc)}">
-                      PLATE MODEL {pc:.3f}
-                    </span>
-                    <span class="conf-badge cb-red">OCR CONF {oc:.3f}</span>
-                  </div>
-                  <div style="font-family:'Share Tech Mono',monospace;font-size:0.58rem;
-                  color:#7d8590;margin-top:0.6rem">
-                    Image too blurry / low-res for OCR
-                  </div>
+              </div>
+              <div style="flex:1;min-width:160px">
+                <div style="font-family:'Share Tech Mono',monospace;font-size:0.58rem;
+                color:#7d8590;letter-spacing:2px;margin-bottom:0.5rem">EXTRACTED PLATE NUMBER</div>
+                <div style="font-family:'Share Tech Mono',monospace;font-size:2rem;
+                font-weight:700;color:#f0a500;letter-spacing:6px;word-break:break-all;
+                text-shadow:0 0 20px #f0a50066">
+                  {v['plate_text']}
                 </div>
-                """, unsafe_allow_html=True)
-            else:
-                st.markdown("""
-                <div style="background:#0d1117;border:2px solid #21262d;
-                border-radius:10px;padding:1.4rem 1.6rem;margin-top:0.2rem">
-                  <div style="font-family:'Share Tech Mono',monospace;font-size:0.6rem;
-                  color:#7d8590;letter-spacing:2px;margin-bottom:0.5rem">
-                    NO PLATE DETECTED
-                  </div>
-                  <div style="font-family:'Share Tech Mono',monospace;
-                  font-size:1rem;color:#7d8590">—</div>
-                  <div style="font-family:'Share Tech Mono',monospace;font-size:0.58rem;
-                  color:#7d8590;margin-top:0.6rem">
-                    Try lowering the plate confidence threshold
-                  </div>
+                <div style="margin-top:0.7rem;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+                  <span style="font-family:'Share Tech Mono',monospace;font-size:0.58rem;
+                  color:{quality_color};letter-spacing:1px">{quality_label}</span>
+                  <span class="conf-badge {conf_badge_class(oc)}">OCR CONF {oc:.3f}</span>
                 </div>
-                """, unsafe_allow_html=True)
+              </div>
+            </div>
+            """, unsafe_allow_html=True)
+
+        elif has_plate and not plate_readable:
+            st.markdown(f"""
+            <div style="background:#0d1117;border:2px solid #ff4444;border-radius:12px;
+            padding:1.4rem 1.6rem;margin-top:0.4rem;display:flex;gap:1.4rem;align-items:center;flex-wrap:wrap">
+              <div style="flex:0 0 auto;min-width:120px;text-align:center">
+                <div style="font-family:'Share Tech Mono',monospace;font-size:0.55rem;
+                color:#7d8590;letter-spacing:2px;margin-bottom:6px">PLATE CROP</div>
+                {plate_img_html}
+                <div style="margin-top:6px">
+                  <span class="conf-badge {conf_badge_class(pc)}">MODEL {pc:.3f}</span>
+                </div>
+              </div>
+              <div style="flex:1;min-width:160px">
+                <div style="font-family:'Share Tech Mono',monospace;font-size:0.58rem;
+                color:#7d8590;letter-spacing:2px;margin-bottom:0.5rem">PLATE DETECTED — OCR FAILED</div>
+                <div style="font-family:'Share Tech Mono',monospace;font-size:1.8rem;
+                font-weight:700;color:#ff4444;letter-spacing:4px">UNREADABLE</div>
+                <div style="margin-top:0.7rem;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+                  <span style="font-family:'Share Tech Mono',monospace;font-size:0.58rem;
+                  color:{quality_color};letter-spacing:1px">{quality_label}</span>
+                  <span class="conf-badge cb-red">OCR CONF {oc:.3f}</span>
+                </div>
+                <div style="font-family:'Share Tech Mono',monospace;font-size:0.55rem;
+                color:#7d8590;margin-top:0.5rem">Image too blurry / low-res for OCR</div>
+              </div>
+            </div>
+            """, unsafe_allow_html=True)
+
+        else:
+            st.markdown("""
+            <div style="background:#0d1117;border:2px solid #21262d;border-radius:12px;
+            padding:1.4rem 1.6rem;margin-top:0.4rem;display:flex;gap:1.4rem;align-items:center">
+              <div style="flex:0 0 auto;min-width:120px;text-align:center">
+                <div style="font-family:'Share Tech Mono',monospace;font-size:0.55rem;
+                color:#7d8590;letter-spacing:2px;margin-bottom:6px">PLATE CROP</div>
+                <div style="background:#161b22;border:1px dashed #21262d;border-radius:4px;
+                padding:1rem;font-family:'Share Tech Mono',monospace;font-size:0.6rem;color:#7d8590">
+                  NO CROP
+                </div>
+              </div>
+              <div style="flex:1;min-width:160px">
+                <div style="font-family:'Share Tech Mono',monospace;font-size:0.58rem;
+                color:#7d8590;letter-spacing:2px;margin-bottom:0.5rem">NO PLATE DETECTED</div>
+                <div style="font-family:'Share Tech Mono',monospace;font-size:1rem;color:#7d8590">—</div>
+                <div style="font-family:'Share Tech Mono',monospace;font-size:0.55rem;
+                color:#7d8590;margin-top:0.5rem">Try lowering the plate confidence threshold</div>
+              </div>
+            </div>
+            """, unsafe_allow_html=True)
+
+        # ── Preprocessed variants (collapsed expander) ────────────────────────
+        if has_plate:
+            with st.expander("🔬 Preprocessed variants sent to OCR", expanded=False):
+                variant_labels = [
+                    "CLAHE + Otsu", "Inverted Otsu", "Adaptive Thresh",
+                    "Sharpen + Otsu", "Dilated", "Bilateral + Otsu",
+                    "Gamma bright", "Gamma dark", "Deskewed",
+                ]
+                pp_variants = preprocess_plate(v["plate_crop_bgr"])
+                cols_pp = st.columns(min(3, len(pp_variants)))
+                for vi, vv in enumerate(pp_variants):
+                    lbl = variant_labels[vi] if vi < len(variant_labels) else f"Variant {vi+1}"
+                    vv_disp = upscale_plate_for_display(vv, target_h=60)
+                    with cols_pp[vi % 3]:
+                        st.image(vv_disp, caption=lbl, width=160)
 
         if i < len(violations) - 1:
             st.markdown("---")
